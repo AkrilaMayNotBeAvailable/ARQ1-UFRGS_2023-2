@@ -1,0 +1,85 @@
+ORG 192
+entrada: 	DB 
+saida: 		DB 
+cypher_jump: 	DB 
+cypher_flag:	DB 
+
+ORG 0
+LDR A, #0	; Zerar os registradores
+LDR B, #0	; Zerar os registradores
+LDR X, #0	; Zerar os registradores	
+
+src_ptr:		DB 0	; Ponteiro para uma posição no vetor de entrada
+dst_ptr:		DB 0	; Ponteiro para uma posição no vetor de saída
+
+LDR X, entrada,X 	; Carrega endereço de entrada
+STR X, src_ptr		; Guarda endereço de entrada no ponteiro
+LDR X, #0
+LDR X, saida,X		; Carrega endereço de saída
+STR X, dst_ptr		; Guarda endereço de saída no ponteiro
+LDR X, #0
+
+loop:
+LDR A, src_ptr,I		; Carrega o VALOR do source_ptr em A
+STR A, dst_ptr,I		; Copia o valor de src para dst
+JZ fim			; A última coisa colocada no dst foi zero
+JSR CypherKey		; Função para cypher e decypher
+
+; void CypherKey(unsigned char *src, unsigned char *dst, short int mode){
+CypherKey:
+	NOP
+	LDR B, cypher_flag 	; Verifica opção de cifragem ou decifragem
+	JZ Cypher 		; Se zero, é cifragem
+	JMP Decypher 		; Se qualquer coisa, decifragem
+Cypher:
+	LDR A, dst_ptr,I 	; Carrega *src em A
+	ADD A, cypher_jump 	; Cifra A
+	STR A, dst_ptr,I 	; Atualiza *dst com A crifrado
+; Por que somar 37? 90 + 37 = 127 (último positivo)
+; Só deve-se corrigir se o número for negativo.
+	ADD A, #37 ; Se estiver cifrando, soma 37.
+	JN corrige_cifra 	; Corrige se for negativo
+	JMP atualiza_ptr 	; Atualiza os ponteiros
+Decypher:
+	LDR A, dst_ptr,I 	; Carrega *src em A
+	SUB A, cypher_jump 	; Cifra A
+	STR A, dst_ptr,I 	; Atualiza *dst com A crifrado
+	SUB A, #65		; Subtraí 65, se for negativo, tem que corrigir
+	JN corrige_decifra	; Pula para correção
+	JMP atualiza_ptr ; Atualiza os ponteiros
+
+corrige_cifra:
+	LDR A, dst_ptr,I	; Carrega o ponteiro destino
+	SUB A, #26	; Ajusta o valor
+	STR A, dst_ptr,I ; Salva o ponteiro
+	JMP atualiza_ptr ; Atualiza os ponteiros
+
+corrige_decifra:
+	LDR A, dst_ptr,I ; Carrega o ponteiro destino
+	ADD A, #26	; Ajusta o valor
+	STR A, dst_ptr,I	; Salva o ponteiro
+	JMP atualiza_ptr ; Atualiza os ponteiros
+;}
+
+; Deve ocorrer independente de cifragem ou decifragem
+atualiza_ptr:
+	LDR X, src_ptr 	; Carrega o ponteiro em X
+	ADD X, #1 	; Soma um em X
+	STR X, src_ptr 	; Atualiza o ponteiro fonte
+
+	LDR X, dst_ptr	; Carrega o destino em X
+	ADD X, #1	; Soma um em X
+	STR X, dst_ptr	; Atualiza o ponteiro destino
+
+JMP loop
+
+fim:
+STR A, src_ptr ; Zerar os ponteiros
+STR A, dst_ptr ; Zerar os ponteiros
+HLT
+
+
+
+
+
+

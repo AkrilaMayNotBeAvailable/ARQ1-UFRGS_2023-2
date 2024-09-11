@@ -1,0 +1,605 @@
+;########	DEFINES		########
+END_STRING:		equ 0
+UNDERSCORE:		equ h5f
+HYPHEN:				equ h2d
+SPACE: 				equ h20
+KEYPRESS:			equ h80
+PERIPHERALS:	equ hFF80
+;ISR:					equ h4000
+VARIABLES:		equ h400
+
+; Variables updated while game runs
+WORKSPACE:			equ hFFDC
+
+ORG VARIABLES
+lifes:					DW 1
+palavra:				DAB [26]
+time_counter:		DW 1
+str_lifes:			DAB 'Vidas: ',0
+str_win:				DAB 'Voce Ganhou!   Tempo de jogo: ',0
+str_lose:				DAB 'Voce Perdeu!   Tempo de jogo: ',0
+str_insert:			DAB 'Palavra: ',0
+str_invalid:		DAB 'Palavra Invalida!',0
+life_invalid:		DAB 'Numero de vidas invalido!',0
+Tecla:					DW	0
+
+Relogio:
+Hora:						dw	0
+Minuto:					dw	0
+Segundo:				dw	0
+Decimos:				dw	0
+
+ORG WORKSPACE
+secretWord:			DAB	[26]
+
+ORG PERIPHERALS
+STACK:
+	DAW [31]
+
+IVET:		DW 0		; Vetor de interrupção
+				; Acesso em 8 bits
+
+; HFFC0
+DAB [23]
+
+TIMDT:		DB 0		; Timer Base Time
+INTS:			DB 0		; INTERRUPT STATUS
+INTE:			DB 0		; INTERRUPT ENABLE
+TECST:		DB 0		; Status do teclado
+TECDT:		DB 0		; Dado do teclado
+VISOR:		DAB [36]	; Portas de acesso ao visor
+
+ORG 0
+;Programa
+	clr R0
+	clr R1
+	clr R2
+	clr R3
+	clr R4
+	clr R5
+	clr R6
+;	Inicializa o processador e o hardware
+	mov		#STACK,r6
+	
+	clr		INTS					; Reset pedidos de interrupção
+	clr		TECST					; Reset estado do hardware do teclado
+	mov		#isr,IVET			; Set Interrupt Service Rotine
+	mov		#100,TIMDT		; Set timer para interromper a cada 100ms
+;----------------------------------------
+;	Inicializa relógio:
+	mov		#4,r0
+	mov		#Relogio,r1
+loop_relogio:
+	clr		(r1)+
+	sob		r0,loop_relogio
+;-------------------------------
+;	Limpa o visor
+	mov		#36,r0
+	mov		#VISOR,r1
+loop_reset:
+	mov		#' ',(r1)
+	inc		r1
+	sob		r0,loop_reset
+;-------------------------------
+; Caso de novo jogo, em que ficaria lixo da partida passada
+;	Limpa string
+	mov		#26,r0
+	mov		#palavra,r1
+loop_string_reset:
+	mov		#0,(r1)
+	inc		r1
+	sob		r0,loop_string_reset
+;-------------------------------
+
+; DESAFIO: O USUÁRIO ESCOLHE A palavra AO COMEÇAR O JOGO
+	mov #palavra, R3
+	mov #25, R4
+	jsr R7, GetLine
+
+	; Verifica se a palavra de entrada é válida ou não
+	mov #palavra, R1
+	jsr R7, ValidString
+	tst R0
+	beq InvalidWordResponse
+
+	; Esse trecho verifica se a vida do jogador é válida no início.
+	mov lifes, R1 						; Manda a vida do usuário pra R1
+	jsr R7, ValidNumberRange	; Verificação se a vida é válida
+	tst R0										; Testa o retorno da função
+	beq	InvalidLifeResponse		; Branch se a vida é inválida (R0 == 0)
+
+	mov #palavra, R0
+	mov #VISOR, R3
+	jsr R7, FillStringUnderscore
+
+draw:
+	;mov		#h81,INTE ; Isso faz o relógio contar tempo
+	mov		#-1,Tecla
+	;mov		#VISOR,r0
+	mov		#h82,INTE
+loop_main:
+	; Coloca o Relogio no visor
+	;mov		Minuto,r0
+	;mov		#VISOR+30,r1
+	;jsr		r7,printf
+	
+	;mov		#':',VISOR+32
+
+	;mov		Segundo,r0
+	;mov		#VISOR+33,r1
+	;jsr		r7,printf
+
+	cmp		Tecla,#255
+	bhi		loop_main
+
+	mov Tecla, R0
+	jsr R7, InGameToUpper
+
+	mov #palavra, R0
+	jsr R7, GetChar
+
+	cmp (R1), (R2)
+	beq revela
+
+	br segue
+
+revela:
+	mov #VISOR, R0
+	mov R1, (R0)
+
+segue:
+
+	mov		#-1,Tecla
+	
+	inc		r0
+	tst		r0
+	bne		loop_main
+	
+	mov		#VISOR,r0
+
+
+	br		loop_main
+
+
+	;mov #secretWord, R0
+	;mov #VISOR, R1
+	;mov #1, R4
+	;jsr R7, puts
+
+	;mov #str_lifes, R0
+	;mov #hFFF7, R1
+	;clr R4
+	;jsr R7, puts
+
+	;mov		lifes, R0
+	;mov		#hFFFE, R1
+	;jsr		R7, printf
+
+END:
+		hlt
+
+; R5 -> visor
+; CONTINUE FROM HERE
+GetChar:
+	clr R2
+	dec R0
+
+	mov (R0), R2
+	and #hFF, R2
+
+	cmp (R1), (R2)
+
+	inc R0
+	tst R0
+	beq RetornoDaFuncao ; BUG
+
+revela_2:
+	mov R1, (R5)
+	inc R5
+
+RetornoDaFuncao:
+	rts R7
+
+
+;--------------------------------------------------------------------------
+; Display errors functions
+InvalidLifeResponse:
+		mov #life_invalid, R0
+		mov #VISOR, R1
+		jsr R7, puts 					; Escreve no visor que o usuário fez bosta
+		br END
+
+InvalidWordResponse:
+		mov #str_invalid, R0
+		mov #VISOR, R1
+		jsr R7, puts 					; Escreve no visor que o usuário fez bosta
+		br END
+
+
+; GetLine(char *string, int *size)
+;	Gets from input a string up to size
+;	R3 -> string pointer, R4 -> size
+GetLine:
+	mov		#-1,Tecla
+	dec 	R3						; Ajusta o ponteiro
+	mov		#h82,INTE
+GetLine_1:
+	; Pega informação do teclado, se for > 255 não tem informação
+	; else tem informação.
+	cmp		Tecla,#255		; Verifica se tem informação
+	bhi		GetLine_1 		; Não tem informação, volta o loop
+	ble		KeyToUpper
+
+WasEnterPressed:
+	tst 	R1
+	beq		EndGetLine		; Retorna da subrotina se foi pressionado enter
+
+GetLine_2:
+	mov R1, R5				; Manda a tecla pra R5 porque sim
+	and #hFF, R5				; Pega o LSB dos bit porque sim também
+	
+	add		R5,(R3)				; Soma o valor de R5 em R3
+	mov		#-1,Tecla			; Reseta a tecla para próxima iteração
+	
+	dec		R4						; Um for ao contrário, diminui o i do buffer
+	tst		R4						; Verifica se o i é zero
+	beq		EndGetLine		; Retorna
+
+	inc		R3						; Aponta pro próximo caractere
+	tst		R3						; ahn?
+	bne		GetLine_1			; Se não é igual volta pro loop
+
+EndGetLine:
+	rts 	R7						; Retorno da subrotina
+
+KeyToUpper:
+	mov 	Tecla, R0
+	jsr 	R7, ToUpper
+	br 		WasEnterPressed
+
+;--------------------------------------------------------------------------
+; Validation on input data
+; R0 ValidNumberRange(R1) -> Checks if number is within 1 and 99
+; R0 ValidString(R1) -> Checks if string is a uppercase character or hyphen or space
+;-------------------------------------------------------
+; Recieves a number and check if the value corresponds to the range specified
+; range must be within [1, 99]. If valid returns 1 else zero;
+; int ValidNumberRange(int number); || R0 Routine(R1);
+ValidNumberRange:
+		mov		#0,R0									; Inicializa o retorno com zero (inválido)
+		cmp		R1,#1									; Compara number com 1
+		blt		ValidNumberRange_End 	; Branch se number é menor que um 
+		cmp		R1,#99								; Compara number com 99
+		bgt		ValidNumberRange_End 	; Branch se number é maior que noventa e nove 
+		mov		#1,R0									; Se as comparações não fizeram branch então é válido, retorna 1 em R0
+	ValidNumberRange_End:
+			rts		R7										; Retorna da subrotina
+
+; Recieves a string and check if it's a valid string for this game
+; if valid return 1 else zero;
+; int ValidString(char *string); || R0 Routine(R1);
+ValidString:
+		mov		#0,R0								; Initialize the return value to zero (invalid)
+		clr		R2									; Clear auxiliary register R2
+	ValidString_Loop:
+			mov		(R1), R2						; Load character from the string to R2
+			and		#HFF, R2						; Keep lower 8 bits
+			beq		ValidString_End			; Branch if end of string
+
+			cmp 	R2, #'-'						; Check for hyphen
+			beq 	NextIteration				; If it's an hyphen, it's a valid character
+
+			cmp		R2, #'A'						; Check if it's an uppercase letter
+			blt		InvalidChar					; Branch if it's not an uppercase letter
+
+			cmp		R2, #'Z'						; Check if it's within the valid uppercase letter range
+			bgt		InvalidChar					; Branch if it's not within the range
+
+	NextIteration:
+			inc		R1									; Move to the next character in the string
+			br		ValidString_Loop		; Repeat the loop
+
+	InvalidChar:
+			mov		#0, R0							; Set return value to zero (invalid)
+			rts		R7									; Return from subroutine
+
+	ValidString_End:
+			mov		#1, R0							; If the loop completes, the string is valid
+			rts		R7									; Return from subroutine
+
+
+;--------------------------------------------------------------------------
+; Print on display functions:
+; printf(R0, R1) -> Working for format %02d
+; puts(*R0, R1, R4) -> Working for any null termined string.
+;-------------------------------------------------------
+; Writes a two digit value on display
+;	void printf(int value, int position);
+;	R0 -> Value to print, R1 -> Position on display
+printf:
+	clr		r2
+	printf_2:
+		cmp		r0,#10
+		blt		printf_1
+		sub		#10,r0
+		inc		r2
+		br		printf_2
+	printf_1:
+		add		#'0',r2
+		add		#'0',r0
+		mov		r2,(r1)
+		inc		r1
+		mov		r0,(r1)
+		rts		r7
+
+; Writes a string on a set position of display
+; void puts(char *string, int position, int flag);
+; R0 -> First string character, R1 -> Position on display, R4 -> flag
+puts:
+	clr 	R2					; Clear Auxiliar register
+	cmp		#1, R4
+	beq		puts_1
+	dec		R0					; Adjust R0 to the first character of the string
+
+	puts_1:
+		mov 	(R0), R2		; Load character from the string
+		and		#HFF, R2		; Keep lower 8 bits
+		beq		puts_2			; checks for '/0'
+
+		mov		(R0),	(R1)	; Copy character to display position
+		inc		R0					; Next character
+		inc		R1					; Next position
+		br puts_1					; Loop for the next char
+	puts_2:
+		rts		R7 					; Return from subroutine
+
+;--------------------------------------------------------------------------
+;GetChar:
+;	clr R2				; Clears auxiliar
+;
+;	dec R0				; Adjust address
+;	mov (R0), R2	; Gets first character value
+;	and #hFF, R2	; Keeps 8 bits only
+;	inc R0
+;
+;	rts	R7				; Returns from subroutine
+
+
+
+; Recieves a char and updates to upper version of char
+; AUXILIAR FUNCTION
+; char ToUpper(char inputChar);
+; inputChar -> R0, returns on R1
+; Uppercase range (41, 5A) && Lowercase range (61, 7A)
+; Returns 0 for enter key
+ToUpper:
+		cmp			R0, #h0D
+		beq			Key_Enter_Pressed
+
+		cmp			R0, #'-'				; Valid
+		beq			SendBack
+
+	InGameToUpper:
+		cmp			R0, #'Z'				; Se for um caractere maiúsculo, verifica para confirmação
+		blt			IsUppercase			; sub-função de confirmar
+
+	NotUppercase:
+			cmp     R0, #'a'        ; Check if inputChar is less than 'a'
+			blt     InvalidToUpper  ; If yes, it's not a lowercase character
+
+			cmp     R0, #'z'        ; Check if inputChar is greater than 'z'
+			bgt     InvalidToUpper  ; If yes, it's not a lowercase character
+
+			mov     R0, R1          ; Copy the character to R1
+			sub     #h20, R1        ; Subtract 0x20 (32 in decimal) to convert to uppercase
+
+			rts     R7              ; Return from the subroutine
+
+	InvalidToUpper:
+			mov     #255, R1        ; Return 255 as an error indicator
+			rts     R7              ; Return from the subroutine
+
+	Key_Enter_Pressed: ; Enter foi pressionado, isso informa para encerrar a chamada de input
+			mov			#0, R1
+			rts 		R7
+
+	IsUppercase:
+			cmp 		R0, #'A'				; Compara se é menor que 'A'
+			blt 		NotUppercase		; Se for, não é uma letra maiúscula.
+			br 			SendBack				; Envia para a função
+
+	SendBack: ; O caractere é válido, mas não é uma letra
+			mov 		R0, R1
+			rts 		R7
+
+; FillStringUnderscore(char *a, char *b)
+; Fill a string with underscores based on another string
+; R0 -> Main String, R3 -> Hidden String
+FillStringUnderscore:
+		clr		R2									; Clear auxiliary register R2
+		dec		R0
+	FillStringUnderscore_1:
+			mov		(R0), R2						; Load character from the string to R2
+			and		#HFF, R2						; Keep lower 8 bits
+			beq		EndCopyString				; Branch if end of string
+
+			cmp R2, #'-'
+			beq AddHyphen
+
+			br AddUnderscore
+
+	AddHyphen:
+		mov #'-', (R3)
+		br FillStringUnderscore_2
+
+	AddUnderscore:
+		mov #'_', (R3)
+		br FillStringUnderscore_2
+
+	FillStringUnderscore_2:
+		inc R3
+		inc r0
+		br FillStringUnderscore_1
+
+	EndCopyString:
+		rts R7
+
+; Updates character on hidden string depending on value
+; Returns 1 on successful update, else returns 0.
+; Inputs: R1 (inputValue), R0 (memory address of the hidden string)
+; Output: R0 (result: 1 for success, 0 for failure)
+
+; R0 -> Str1, R2 -> Str2
+InputUpdate:
+	mov		#-1,Tecla
+	;dec 	R3						; Ajusta o ponteiro
+	mov		#h82,INTE			; Isso ativa a interrupção do teclado
+	; Aí tu compara a tecla com a string original
+	GetKey:
+		cmp		Tecla,#255		; Verifica se tem informação
+		bhi		GetKey 				; Não tem informação, volta o loop
+		ble		InGameToUpper
+		; Aqui a tecla tá uppercase no R1 (eu espero que esteja)
+	CompareString:
+		mov R1, R5					; Manda a tecla pra R5 porque sim
+		and #hFF, R5				; Pega o LSB dos bit porque sim também
+		
+		cmp #255, R5				; Inválida ou Erro, perde uma vida
+		beq Error						; Função de tirar vida
+
+		mov #palavra, R0
+		mov #VISOR, R3
+		jsr R7, RevealLetter
+
+		;mov		#-1,Tecla			; Reseta a tecla para próxima iteração
+		
+		;dec		R4						; Um for ao contrário, diminui o i do buffer
+		;tst		R4						; Verifica se o i é zero
+		;beq		EndGetLine		; Retorna
+
+		;inc		R3						; Aponta pro próximo caractere
+		;tst		R3						; ahn?
+		;bne		GetLine_1			; Se não é igual volta pro loop
+		rts R7
+
+
+	ToUpperInput:
+		mov 	Tecla, R0
+		jsr 	R7, InGameToUpper
+		br 		CompareString
+
+; Error(int *life)
+;	R0 -> Life
+Error:
+		mov lifes, R0
+		dec R0
+		mov R0, lifes
+		br InputUpdate
+
+
+; RevealLetter()
+; R0 -> String original, R3 -> Hidden
+RevealLetter:
+		clr		R2									; Clear auxiliary register R2
+		dec		R0
+	Reveal:
+		mov		(R0), R2						; Load character from the string to R2
+		and		#HFF, R2						; Keep lower 8 bits
+		beq		EndReveal						; Branch if end of string
+		
+		cmp		R1, R2
+		beq 	Reveal_1
+
+		br CheckNextCharacters
+
+	Reveal_1:
+		mov R1, (R3)
+		br CheckNextCharacters
+
+	CheckNextCharacters:
+		inc R3
+		inc r0
+		br Reveal
+
+	EndReveal:
+		rts R7
+
+
+
+; Checks if player life is higher than zero;
+; int GameOver(int life);
+
+;==========================================================
+; Rotina de INTERRUPÇÃO
+; S� ser� chamada se as interrupções estiverem habilitadas
+isr:
+	mov		r0,-(r6)	; Salva registradores (n�o � necess�rio salvar o R5)
+	mov		r1,-(r6)
+	mov		r2,-(r6)
+	mov		r3,-(r6)
+	mov		r4,-(r6)
+	mov		r5,-(r6)
+
+	mov		INTS,r0		; Verifica se é INT do TIMER
+	and		#1,r0
+	beq		ISR2
+	jsr		r7,ISRtim	; Tratamento da INT do TIMER
+	and		#hFFFE,INTS	; Desliga bit de INT TIMER
+
+	mov		INTS,r0		; Verifica se é INT do TECLADO
+	and		#2,r0
+	beq		ISR2
+	jsr		r7,ISRtec	; Tratamento da INT do TECLADO
+	and		#hFFFD,INTS	; Desliga bit de INT TECLADO
+	ISR2:
+		mov		(r6)+,r5	; Retorna os registradores da pilha
+		mov		(r6)+,r4
+		mov		(r6)+,r3
+		mov		(r6)+,r2
+		mov		(r6)+,r1
+		mov		(r6)+,r0
+
+		rti					; Return From Interrupt
+	
+;----------------------------------------------------------
+;	Tratamento das interrup��es de teclado
+;	if (Tecla>255) {
+;		Tecla = TECDT
+;	}
+;	TECST=0
+ISRtec:
+	cmp		Tecla,#256
+	bls		ISRtec_1
+	mov		TECDT,Tecla
+ISRtec_1:
+	clr		TECST
+
+ISRtec_Fim:
+	rts		r7
+
+;---------------------------------------------------
+; Interrupção do timer KKKKKKKKKKK
+ISRtim:
+	inc		Decimos
+	cmp		Decimos,#10
+	blt		ISRtim_Fim
+	clr		Decimos
+
+	inc		Segundo
+	cmp		Segundo,#60
+	blt		ISRtim_Fim
+	clr		Segundo
+
+	inc		Minuto
+	cmp		Minuto,#60
+	blt		ISRtim_Fim
+	clr		Minuto
+
+	inc		Hora
+	cmp		Hora,#24
+	blt		ISRtim_Fim
+	clr		Hora
+
+ISRtim_Fim:
+	rts		r7
+
